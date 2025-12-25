@@ -48,8 +48,10 @@ def to_grayscale(r: int, g: int, b: int) -> int:
 def main(stdscr):
     parser = ArgumentParser(description="A script to run a .bin compressed video file in the terminal window.")
     parser.add_argument("input_file", help="The input file.")
+    parser.add_argument("-d", "--debug", action="store_true")
 
     args = parser.parse_args()
+    is_debug = args.debug
 
     if (not os.path.exists(args.input_file)):
         print(f"ERROR: File \"{os.path.basename(args.input_file)}\" does not exist.")
@@ -67,8 +69,11 @@ def main(stdscr):
         return 6
     
     time_step = 1 / fps
+    frame_counter = 0
+    total_timer = 0
+    fps_counter = -1
 
-    while True:
+    while (current_frame < len(img_data)):
         stdscr.refresh()
         height, width = stdscr.getmaxyx()
 
@@ -113,10 +118,29 @@ def main(stdscr):
 
                 stdscr.addch(y, x, ASCII_SET[shadow_idx])
 
+
+        if (is_debug):
+            stdscr.addstr(1, 1, f" Frame {current_frame} / {len(img_data)} ")
+
+            if (fps_counter > 0):
+                stdscr.addstr(2, 4, f" FPS: {fps_counter} ")
+
         dt = perf_counter() - t0
         current_frame += 1
 
         if (dt < time_step):
-            sleep(time_step - dt)
+            t1 = max(0.001, time_step - dt)
+            dt += t1
+            sleep(t1)
+        
+        if (is_debug):
+            frame_counter += 1
+            total_timer += dt
+
+            if (total_timer >= 1):
+                total_timer -= 1
+                fps_counter = frame_counter
+
+                frame_counter = 0
 
 curses.wrapper(main)
