@@ -48,10 +48,12 @@ def to_grayscale(r: int, g: int, b: int) -> int:
 def main(stdscr):
     parser = ArgumentParser(description="A script to run a .bin compressed video file in the terminal window.")
     parser.add_argument("input_file", help="The input file.")
+    parser.add_argument("--frame-advance", action="store_true")
     parser.add_argument("-d", "--debug", action="store_true")
 
     args = parser.parse_args()
     is_debug = args.debug
+    is_frame_advance = args.frame_advance
 
     if (not os.path.exists(args.input_file)):
         print(f"ERROR: File \"{os.path.basename(args.input_file)}\" does not exist.")
@@ -118,29 +120,34 @@ def main(stdscr):
 
                 stdscr.addch(y, x, ASCII_SET[shadow_idx])
 
+        
+        show_frame_counter = (is_debug or is_frame_advance)
 
-        if (is_debug):
+        if (show_frame_counter):
             stdscr.addstr(1, 1, f" Frame {current_frame} / {len(img_data)} ")
 
-            if (fps_counter > 0):
-                stdscr.addstr(2, 4, f" FPS: {fps_counter} ")
+        if (is_debug and fps_counter > 0):
+            stdscr.addstr(2, 4, f" FPS: {fps_counter} ")
 
         dt = perf_counter() - t0
         current_frame += 1
 
-        if (dt < time_step):
-            t1 = max(0.001, time_step - dt)
-            dt += t1
-            sleep(t1)
-        
-        if (is_debug):
-            frame_counter += 1
-            total_timer += dt
+        if (not is_frame_advance):
+            if (dt < time_step):
+                t1 = max(0.001, time_step - dt)
+                dt += t1
+                sleep(t1)
+            
+            if (is_debug):
+                frame_counter += 1
+                total_timer += dt
 
-            if (total_timer >= 1):
-                total_timer -= 1
-                fps_counter = frame_counter
+                if (total_timer >= 1):
+                    total_timer -= 1
+                    fps_counter = frame_counter
 
-                frame_counter = 0
+                    frame_counter = 0
+        else:
+            stdscr.getch()
 
 curses.wrapper(main)
