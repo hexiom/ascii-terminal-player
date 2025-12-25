@@ -17,7 +17,7 @@ def parse_frames(file_name: str):
     with open(file_name, "rb") as f:
         header = f.read(4).decode("ascii")
         if (header != "thba"):
-            print(f"ERROR: The file specified is invalid.")
+            print(f"ERROR: The file specified is invalid and/or not a compressed video.")
             return 6
         
         fps = int.from_bytes(f.read(1))
