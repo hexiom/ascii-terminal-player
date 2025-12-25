@@ -1,13 +1,13 @@
 from PIL import Image
 from argparse import ArgumentParser
 import numpy as np
-import bz2, os, curses
+import lz4.frame as lz4f
+import os, curses
 from math import floor, ceil
 from time import sleep, perf_counter
 
-# ASCII_SET = '@%#*+=-:.'
 ASCII_SET = " .:-=+*#%@"
-SHADING_GAMMA = 2.2
+SHADING_GAMMA = 1.5
 
 def parse_frames(file_name: str):
     img_data = []
@@ -22,6 +22,7 @@ def parse_frames(file_name: str):
             return 6
         
         fps = int.from_bytes(f.read(1))
+        has_compression = bool(int.from_bytes(f.read(1)))
         chunk_count = int.from_bytes(f.read(4))
         img_width = int.from_bytes(f.read(4))
         img_height = int.from_bytes(f.read(4))
@@ -35,11 +36,12 @@ def parse_frames(file_name: str):
             img_data.append(chunk_data)
             i += 1
 
-    return (fps, img_data, img_width, img_height)
+    return (fps, has_compression, img_data, img_width, img_height)
 
-def decompress_frame(frame_data, img_width, img_height):
-    decompressed = bz2.decompress(frame_data)
-    im = Image.frombytes("L", (img_width, img_height), decompressed)
+def parse_frame(frame_data, has_compression, img_width, img_height):
+    if (has_compression):
+        frame_data = lz4f.decompress(frame_data)
+    im = Image.frombytes("L", (img_width, img_height), frame_data)
 
     return np.array(im)
 
@@ -104,7 +106,7 @@ def main(stdscr):
     curses.curs_set(0)
     stdscr.clear()
     
-    (fps, img_data, img_width, img_height) = parse_frames(args.input_file)
+    (fps, has_compression, img_data, img_width, img_height) = parse_frames(args.input_file)
 
     if (img_width <= 0 or img_height <= 0 or fps <= 0):
         print(f"ERROR: File specified is invalid.")
@@ -138,7 +140,7 @@ def main(stdscr):
             w_factor = img_width / width
             h_factor = img_height / height
 
-            frame_data = decompress_frame(img_data[current_frame], img_width, img_height)
+            frame_data = parse_frame(img_data[current_frame], has_compression, img_width, img_height)
             t0 = perf_counter()
 
             for y in range(height):

@@ -1,4 +1,5 @@
-import sys, os, bz2
+import sys, os
+import lz4.frame as lz4f
 from PIL import Image
 from argparse import ArgumentParser
 
@@ -20,7 +21,6 @@ def main():
 
     img_width = -1
     img_height = -1
-    frame_data = []
 
     os.makedirs(args.output, exist_ok=True)
 
@@ -34,6 +34,7 @@ def main():
         
         # Skip fps
         f.read(1)
+        has_compression = bool(int.from_bytes(f.read(1)))
         chunk_count = int.from_bytes(f.read(4))
         img_width = int.from_bytes(f.read(4))
         img_height = int.from_bytes(f.read(4))
@@ -47,19 +48,18 @@ def main():
             chunk_len = int.from_bytes(f.read(4))
             chunk_data = f.read(chunk_len)
 
-            decompressed = bz2.decompress(chunk_data)
-            im = Image.frombytes("L", (img_width, img_height), decompressed)
-
-            frame_data.append(im)
-
-            i += 1
-
             print(f"Decompressing chunk {i} / {chunk_count}")
 
-    for i, im in enumerate(frame_data):
-        file_name = f"frame_{i+1:04d}.png"
-        print(f"Exporting {file_name}")
-        im.save(os.path.join(args.output, file_name))
+            if (has_compression):
+                chunk_data = lz4f.decompress(chunk_data)
+
+            file_name = f"frame_{i+1:04d}.png"
+            im = Image.frombytes("L", (img_width, img_height), chunk_data)
+
+            print(f"Exporting {file_name}")
+
+            im.save(os.path.join(args.output, file_name))
+            i += 1
 
     return 0
 
