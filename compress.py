@@ -27,8 +27,10 @@ def main():
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help=f"The FPS at which the frames of the video will be rendered. The default is {DEFAULT_FPS}")
     parser.add_argument("--size", type=dimension_argument, help=f"The size of the resulting frames. Can be used to downscale or downscale the video. Must be in the form (w, h).")
     parser.add_argument("--compression-level", type=int, default=DEFAULT_COMPRESSION_LEVEL, help=f"The compression level of resulting binary file using bz2. Must be between 1 and 9. The default is {DEFAULT_COMPRESSION_LEVEL}")
+    parser.add_argument("-d", "--debug", action="store_true")
 
     args = parser.parse_args()
+    is_debug = args.debug
 
     if (args.compression_level < 1 or args.compression_level > 9):
         print(f"ERROR: The compression level must be between 1 and 9 (got {args.compression_level}).")
@@ -58,6 +60,10 @@ def main():
     
     compressed_chunks = []
 
+    if (is_debug):
+        os.makedirs("debug/temp", exist_ok=True)
+
+
     while True:
         ret, frame = cap.read()
         if (not ret):
@@ -73,9 +79,11 @@ def main():
 
             compressed_chunks.append(compressed)
             last_frame += 1
-            cv2.imwrite(f"temp/frames/frame_{last_frame:04d}.png", gray_frame)
             print(f"Writing frame {last_frame}.")
-        
+
+            if (is_debug):
+                cv2.imwrite(f"debug/temp/frame_{last_frame:04d}.png", gray_frame)
+                
         frame_idx += 1
 
     print(f"Created {len(compressed_chunks)} frames.")
