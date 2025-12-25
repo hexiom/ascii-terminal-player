@@ -5,7 +5,8 @@ import bz2, os, curses
 from math import floor, ceil
 from time import sleep, perf_counter
 
-ASCII_SET = '@%#*+=-:.'
+# ASCII_SET = '@%#*+=-:.'
+ASCII_SET = " .:-=+*#%@"
 SHADING_GAMMA = 2.2
 
 def parse_frames(file_name: str):
@@ -42,14 +43,55 @@ def decompress_frame(frame_data, img_width, img_height):
 
     return np.array(im)
 
-def to_grayscale(r: int, g: int, b: int) -> int:
-    return 0.299 * r + 0.587 * g + 0.114 * b
+def get_ascii_char_for_position(x: int, y: int, w_factor: int, h_factor: int, img_width: int, img_height: int, current_frame_data):
+    mapped_x = x * w_factor
+    mapped_y = y * h_factor
+
+    x0 = floor(mapped_x)
+    x1 = ceil(mapped_x)
+    y0 = floor(mapped_y)
+    y1 = ceil(mapped_y)
+
+    dx = mapped_x - x0
+    dy = mapped_y - y0
+
+    if (y0 >= img_height or x0 >= img_width):
+        return
+
+    x1 = min(img_width - 1, x1)
+    y1 = min(img_height - 1, y1)
+
+    c_11 = current_frame_data[y0, x0]
+    c_21 = current_frame_data[y0, x1]
+
+    c_12 = current_frame_data[y1, x0]
+    c_22 = current_frame_data[y1, x1]
+
+    c1 = c_11 * (1 - dx) + c_21 * dx
+    c2 = c_12 * (1 - dx) + c_22 * dx
+
+    color = c1 * (1 - dy) + c2 * dy
+
+    normalized = (color / 255) ** (1 / SHADING_GAMMA)
+    shadow_idx = round(normalized * (len(ASCII_SET) - 1))
+
+    return ASCII_SET[shadow_idx]
+
+def render_debug(stdscr, current_frame: int, total_frame_count: int, fps_counter: int, is_frame_advance: bool, is_debug: bool):
+    show_frame_counter = (is_debug or is_frame_advance)
+
+    if (show_frame_counter):
+        stdscr.addstr(1, 1, f" Frame {current_frame} / {total_frame_count} ")
+
+    if (is_debug and fps_counter > 0):
+        stdscr.addstr(2, 4, f" FPS: {fps_counter} ")
 
 def main(stdscr):
     parser = ArgumentParser(description="A script to run a .bin compressed video file in the terminal window.")
     parser.add_argument("input_file", help="The input file.")
     parser.add_argument("--frame-advance", action="store_true")
     parser.add_argument("-d", "--debug", action="store_true")
+    parser.add_argument("--wait-for-input", action="store_true")
 
     args = parser.parse_args()
     is_debug = args.debug
@@ -62,11 +104,9 @@ def main(stdscr):
     curses.curs_set(0)
     stdscr.clear()
     
-    current_frame = 0
-
     (fps, img_data, img_width, img_height) = parse_frames(args.input_file)
 
-    if (img_width == -1 or img_height == -1 or fps == -1):
+    if (img_width <= 0 or img_height <= 0 or fps <= 0):
         print(f"ERROR: File specified is invalid.")
         return 6
     
@@ -75,79 +115,59 @@ def main(stdscr):
     total_timer = 0
     fps_counter = -1
 
-    while (current_frame < len(img_data)):
-        stdscr.refresh()
-        height, width = stdscr.getmaxyx()
+    if (args.wait_for_input):
+        stdscr.addstr(1, 1, "Press any key to start...")
+        stdscr.getch()
 
-        w_factor = img_width / width
-        h_factor = img_height / height
+    start_time = perf_counter()
+    last_rendered_frame = -1
 
-        frame_data = decompress_frame(img_data[current_frame], img_width, img_height)
-        
-        t0 = perf_counter()
-        for y in range(height):
-            for x in range(width - 1):
-                mapped_x = x * w_factor
-                mapped_y = y * h_factor
+    while (True):
+        elapsed_time = perf_counter() - start_time
+        current_frame = int(elapsed_time * fps)
 
-                x0 = floor(mapped_x)
-                x1 = ceil(mapped_x)
-                y0 = floor(mapped_y)
-                y1 = ceil(mapped_y)
+        if (current_frame >= len(img_data)):
+            break
 
-                dx = mapped_x - x0
-                dy = mapped_y - y0
+        if (current_frame != last_rendered_frame):
+            last_rendered_frame = current_frame
 
-                if (y0 >= img_height or x0 >= img_width):
-                    continue
+            stdscr.refresh()
+            height, width = stdscr.getmaxyx()
 
-                x1 = min(img_width - 1, x1)
-                y1 = min(img_height - 1, y1)
+            w_factor = img_width / width
+            h_factor = img_height / height
 
-                c_11 = frame_data[y0, x0]
-                c_21 = frame_data[y0, x1]
+            frame_data = decompress_frame(img_data[current_frame], img_width, img_height)
+            t0 = perf_counter()
 
-                c_12 = frame_data[y1, x0]
-                c_22 = frame_data[y1, x1]
-
-                c1 = c_11 * (1 - dx) + c_21 * dx
-                c2 = c_12 * (1 - dx) + c_22 * dx
-
-                color = c1 * (1 - dy) + c2 * dy
-
-                normalized = (color / 255) ** (1 / SHADING_GAMMA)
-                shadow_idx = round(normalized * (len(ASCII_SET) - 1))
-
-                stdscr.addch(y, x, ASCII_SET[shadow_idx])
-
-        
-        show_frame_counter = (is_debug or is_frame_advance)
-
-        if (show_frame_counter):
-            stdscr.addstr(1, 1, f" Frame {current_frame} / {len(img_data)} ")
-
-        if (is_debug and fps_counter > 0):
-            stdscr.addstr(2, 4, f" FPS: {fps_counter} ")
-
-        dt = perf_counter() - t0
-        current_frame += 1
-
-        if (not is_frame_advance):
-            if (dt < time_step):
-                t1 = max(0.001, time_step - dt)
-                dt += t1
-                sleep(t1)
+            for y in range(height):
+                for x in range(width - 1):
+                    stdscr.addch(y, x, get_ascii_char_for_position(x, y, w_factor, h_factor, img_width, img_height, frame_data))
             
-            if (is_debug):
-                frame_counter += 1
-                total_timer += dt
+            render_debug(stdscr, current_frame, len(img_data), fps_counter, is_frame_advance, is_debug)
 
-                if (total_timer >= 1):
-                    total_timer -= 1
-                    fps_counter = frame_counter
+            dt = perf_counter() - t0
 
-                    frame_counter = 0
-        else:
-            stdscr.getch()
+            if (is_frame_advance):
+                stdscr.getch()
+                continue
+
+            if (dt < time_step):
+                time_to_wait = time_step - dt
+
+                if (time_to_wait >= 0.001):
+                    sleep(time_to_wait)
+                
+                dt = time_step
+            
+            frame_counter += 1
+            total_timer += dt
+
+            while (total_timer >= 1):
+                total_timer -= 1
+                fps_counter = frame_counter
+
+                frame_counter = 0
 
 curses.wrapper(main)
