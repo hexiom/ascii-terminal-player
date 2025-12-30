@@ -9,10 +9,9 @@ def dimension_argument(value):
     value = ''.join(value.split())
     comma_separated = value.split(",")
 
-    if (len(comma_separated) < 2):
-        raise ArgumentTypeError(f"Invalid argument. The dimensions must be in the form (w, h)")
-
     try:
+        if (len(comma_separated) == 1):
+            return (int(comma_separated[0]), -1)
         width = int(comma_separated[0])
         height = int(comma_separated[1])
 
@@ -31,7 +30,7 @@ def main():
 
     args = parser.parse_args()
     is_debug = args.debug
-    
+
     if (not os.path.exists(args.input_file)):
         print(f"ERROR: File \"{os.path.basename(args.input_file)}\" does not exist.")
         return 2
@@ -45,15 +44,25 @@ def main():
             return 0
     
     cap = cv2.VideoCapture(args.input_file)
+    size = args.size
+
     frame_idx = 0
     last_frame = 0
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
     step = cap.get(cv2.CAP_PROP_FPS) / args.fps
 
-    if (args.size):
-        width, height = args.size
-    
+    if (size):
+        if (size[1] < 0):
+            height_ratio = height / width
+            frame_height = round(size[0] * height_ratio)
+            size = (size[0], frame_height)
+
+        width, height = size
+
+    if (is_debug):
+        print(f"The size is ({width}, {height}).")
+
     chunk_list = []
 
     if (is_debug):
@@ -66,8 +75,8 @@ def main():
 
         real_frame_idx = int(frame_idx / step)
         if (real_frame_idx > last_frame):
-            if (args.size):
-                frame = cv2.resize(frame, args.size, interpolation=cv2.INTER_AREA)
+            if (size):
+                frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             bytes_data = gray_frame.tobytes()
