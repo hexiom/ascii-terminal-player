@@ -9,10 +9,9 @@ def dimension_argument(value):
     value = ''.join(value.split())
     comma_separated = value.split(",")
 
-    if (len(comma_separated) < 2):
-        raise ArgumentTypeError(f"Invalid argument. The dimensions must be in the form (w, h)")
-
     try:
+        if (len(comma_separated) == 1 or not comma_separated[1]):
+            return (int(comma_separated[0]), -1)
         width = int(comma_separated[0])
         height = int(comma_separated[1])
 
@@ -50,9 +49,16 @@ def main():
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
     step = cap.get(cv2.CAP_PROP_FPS) / args.fps
+    size = args.size
 
-    if (args.size):
-        width, height = args.size
+    if (size):
+        if (size[1] < 0):
+            height_ratio = height / width
+            size = (size[0], round(size[0] * height_ratio))
+        width, height = size
+    
+    if (is_debug):
+        print(f"The frame size is ({width}, {height}).")
     
     chunk_list = []
 
@@ -66,8 +72,8 @@ def main():
 
         real_frame_idx = int(frame_idx / step)
         if (real_frame_idx > last_frame):
-            if (args.size):
-                frame = cv2.resize(frame, args.size, interpolation=cv2.INTER_AREA)
+            if (size):
+                frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             bytes_data = gray_frame.tobytes()
