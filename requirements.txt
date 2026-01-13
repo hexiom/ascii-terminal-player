@@ -1,0 +1,5 @@
+pillow
+numpy
+lz4
+opencv-python
+simpleaudio

@@ -1,3 +1,8 @@
-videos/
+/videos
 .venv
-debug/
+/debug
+/log
+/subs
+
+.vscode
+__pycache__
