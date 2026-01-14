@@ -3,6 +3,7 @@
 /debug
 /log
 /subs
+build/
 
 .vscode
 __pycache__

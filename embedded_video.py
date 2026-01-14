@@ -2,11 +2,10 @@ from argparse import ArgumentParser, ArgumentTypeError
 import os, curses, threading, simpleaudio as sa
 import sys, cv2, re
 import numpy as np
+from pathlib import Path
 from datetime import datetime
-from math import floor, ceil
 from time import sleep, perf_counter
 
-DEFAULT_ASCII_SET = " .:-=+*@%#"
 PY_FIGLET_FONT = "banner"
 
 HAS_PYFIGLET = True
@@ -161,6 +160,11 @@ def thread_audio(audio_path: str, is_verbose: bool):
         if (is_verbose):
             print(f"AUDIO EXCEPTION: {e}")
 
+def resource_path(rel):
+    if hasattr(sys, "frozen"):
+        return Path(sys.executable).parent / rel
+    return Path(__file__).parent / rel
+
 def load_subtitles(sub_path: str, target_fps: int):
     try:
         subs = pysubs2.load(sub_path, encoding="utf-8")
@@ -171,20 +175,6 @@ def load_subtitles(sub_path: str, target_fps: int):
         return (True, SubtitleState(subs))
     except Exception as e:
         return (False, None)
-
-def get_banner(text: str):
-    if HAS_PYFIGLET:
-        ascii_art = pyfiglet.figlet_format(text, PY_FIGLET_FONT)
-
-        return ascii_art
-    
-    return text
-
-def get_video_name(video_path: str):
-    video_path = os.path.splitext(os.path.basename(video_path))[0]
-    video_path = re.sub(r"[_\-\.\s]+", " ", video_path).replace(".", "").strip()
-
-    return video_path.title()
 
 def time_duration_str(seconds: int):
     minutes, sec = divmod(int(seconds), 60)
@@ -282,61 +272,28 @@ def render_video_details(stdscr, video_stream: VideoStream):
         stdscr.addstr(debug_info_height, 4, f" Frame delta: {(video_stream.last_frame_delta > 0 and "+" or "-")}{(abs(video_stream.last_frame_delta)*1000):.2f}ms ")
         debug_info_height += 1
 
-    if (video_stream.has_subs):
-        stdscr.addstr(debug_info_height, 4, " HAS SUBS ")
-        debug_info_height += 1
+def _main(stdscr):
+    video_path = resource_path("_data/v0")
+    audio_path = resource_path("_data/v1")
+    subtitles_path = resource_path("_data/v2")
+    is_debug = False
+    ascii_set = " .:-=+*@%#"
 
-def _main(stdscr, args):
-    is_debug = args.debug
-    ascii_set = args.ascii
+    if (not os.path.exists(subtitles_path)):
+        subtitles_path = None
+
+    if (not os.path.exists(audio_path)):
+        audio_path = None
 
     curses.curs_set(0)
     stdscr.clear()
     
-    input_filename = args.input_file
-    cap = cv2.VideoCapture(input_filename)
+    cap = cv2.VideoCapture(str(video_path))
 
     if (not cap.isOpened()):
-        return (False, 2, "ERROR: Cannot open video file...")
+        return (False, 2, "ERROR: Cannot open file. Please try again later.")
     
-    video_stream = VideoStream(stdscr, cap, args.audio, args.subs, is_debug)
-
-    if (args.title_screen):
-        banner_title = args.title_banner or get_video_name(input_filename)
-        banner = get_banner(banner_title)
-        banner_lines = banner.split("\n")
-        banner_height = len(banner_lines)
-        banner_width = max(map(lambda l: len(l), banner_lines))
-
-        tex_keypress = "Press any key to start..."
-
-        stdscr.nodelay(True)
-        stdscr.timeout(100)
-
-        while True:
-            term_height, term_width = stdscr.getmaxyx()
-            banner_y = (term_height // 4)
-            banner_bottom = min(banner_y + banner_height, term_height)
-            tex_keypress_y = banner_bottom + 4
-
-            banner_x = term_width // 2 - banner_width // 2
-            tex_keypress_x = term_width // 2 - len(tex_keypress) // 2
-
-            for i in range(banner_height):
-                line = banner_lines[i]
-                stdscr.addstr(banner_y + i, banner_x, line)
-            
-            stdscr.addstr(tex_keypress_y, tex_keypress_x, tex_keypress)
-            stdscr.refresh()
-
-            ch = stdscr.getch()
-
-            if (ch != -1):
-                break
-        
-        stdscr.nodelay(False)
-        stdscr.timeout(-1)
-        
+    video_stream = VideoStream(stdscr, cap, str(audio_path), subtitles_path, is_debug)
     ascii_list = np.array(list(ascii_set))
     video_stream.async_start()
 
@@ -353,9 +310,7 @@ def _main(stdscr, args):
                     continue
 
                 term_height, term_width = stdscr.getmaxyx()
-                # stdscr.clear()
-
-                screen_buffer = create_frame(frame, term_width, term_height, args.invert, ascii_list)
+                screen_buffer = create_frame(frame, term_width, term_height, False, ascii_list)
 
                 for y in range(term_height):
                     line = "".join(screen_buffer[y, :term_width-1])
@@ -373,30 +328,6 @@ def _main(stdscr, args):
         return (False, 1, str(e))
         
 def main():
-    parser = ArgumentParser(description="A script to run a .bin compressed video file in the terminal window.")
-    parser.add_argument("input_file", help="The input file.")
-    parser.add_argument("-d", "--debug", action="store_true")
-    parser.add_argument("--invert", action="store_true", help="Whether or not to invert the ascii set, essentially reversing the lightness values.")
-    parser.add_argument("--subs", help="Adds subtitles to the player. Must specify a subtitles file.")
-    parser.add_argument("--audio", help="Adds audio to the player. Only .wav and raw pcm files are supported.")
-    parser.add_argument("--ascii", default=DEFAULT_ASCII_SET, help=f"The ascii set to use for the player. From darkest pixel to lightest pixel. The default is \"{DEFAULT_ASCII_SET}\"")
-    parser.add_argument("--title-screen", action="store_true", help="Shows a title screen before the actual video. It waits for user input in this screen.")
-    parser.add_argument("--title-banner", help="The title shown on the title screen. If not specified, uses a transformed version of the video name. Only useful if --title-screen is set.")
-
-    args = parser.parse_args()
-
-    if (not os.path.exists(args.input_file)):
-        print(f"ERROR: File \"{os.path.basename(args.input_file)}\" does not exist.")
-        return 1
-        
-    if (args.subs and not os.path.exists(args.subs)):
-        print(f"The subtitles file \"{os.path.basename(args.subs)}\" does not exist.")
-        return 1
-
-    if (args.audio and not os.path.exists(args.audio)):
-        print(f"The audio file \"{os.path.basename(args.audio)}\" does not exist.")
-        return 1
-    
     stdscr = curses.initscr()
 
     curses.noecho()
@@ -412,16 +343,16 @@ def main():
     exit_code = 1
 
     try:
-        (success, exit_code, print_msg) = _main(stdscr, args)
-        
-        if (not success and print_msg):
-            print(str(print_msg))
+        (success, exit_code, print_msg) = _main(stdscr)
     finally:
         curses.nocbreak()
         curses.echo()
         curses.endwin()
         
         return exit_code
+
+    if (not success and print_msg):
+        print(str(print_msg))
 
 if __name__ == "__main__":
     code = main()
